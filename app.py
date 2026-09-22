@@ -17,22 +17,78 @@ from googleapiclient.discovery import build
 
 from azure.identity import DefaultAzureCredential
 from azure.ai.projects import AIProjectClient
+from openai import AzureOpenAI
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-CREDENTIALS_FILE = BASE_DIR / "credentials.json"
-TOKEN_FILE = BASE_DIR / "token.json"
+
+def get_credentials_file():
+    local_file = BASE_DIR / "credentials.json"
+    if local_file.exists():
+        return local_file
+
+    env_content = os.getenv("GMAIL_CREDENTIALS_JSON")
+    if env_content:
+        tmp_file = Path("/tmp") / "credentials.json"
+        try:
+            tmp_file.write_text(env_content, encoding="utf-8")
+            return tmp_file
+        except OSError:
+            pass
+    return local_file
+
+def get_token_file():
+    local_file = BASE_DIR / "token.json"
+    if local_file.exists():
+        return local_file
+
+    env_content = os.getenv("GMAIL_TOKEN_JSON")
+    if env_content:
+        tmp_file = Path("/tmp") / "token.json"
+        try:
+            tmp_file.write_text(env_content, encoding="utf-8")
+            return tmp_file
+        except OSError:
+            pass
+
+    if os.getenv("VERCEL") or not os.access(BASE_DIR, os.W_OK):
+        return Path("/tmp") / "token.json"
+
+    return local_file
+
+def save_token(creds):
+    token_json = creds.to_json()
+    token_file = get_token_file()
+    try:
+        token_file.write_text(token_json, encoding="utf-8")
+    except OSError:
+        fallback = Path("/tmp") / "token.json"
+        try:
+            fallback.write_text(token_json, encoding="utf-8")
+        except OSError:
+            pass
+
+CREDENTIALS_FILE = get_credentials_file()
+TOKEN_FILE = get_token_file()
 
 FOUNDRY_PROJECT_ENDPOINT = os.getenv("FOUNDRY_PROJECT_ENDPOINT", "")
 FOUNDRY_AGENT_NAME = os.getenv("FOUNDRY_AGENT_NAME", "student-ai-agent")
+
+AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY", "")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "https://avadhi3137beai24-0213-resource.openai.azure.com/")
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-5-mini")
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 NOTION_DATA_SOURCE_ID = os.getenv("NOTION_DATA_SOURCE_ID", "")
 NOTION_VERSION = "2026-03-11"
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
 CORS(app)
 
 
@@ -42,25 +98,28 @@ CORS(app)
 
 def gmail_service():
     creds = None
+    token_file = get_token_file()
 
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), GMAIL_SCOPES)
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), GMAIL_SCOPES)
 
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(GoogleRequest())
-        TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+        save_token(creds)
 
     if not creds or not creds.valid:
-        if not CREDENTIALS_FILE.exists():
+        creds_file = get_credentials_file()
+        if not creds_file.exists():
             raise FileNotFoundError(
-                "credentials.json is missing from the project folder."
+                "credentials.json is missing from the project folder. "
+                "Provide credentials.json or set GMAIL_CREDENTIALS_JSON in environment variables."
             )
 
         flow = InstalledAppFlow.from_client_secrets_file(
-            str(CREDENTIALS_FILE), GMAIL_SCOPES
+            str(creds_file), GMAIL_SCOPES
         )
         creds = flow.run_local_server(port=0)
-        TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+        save_token(creds)
 
     return build("gmail", "v1", credentials=creds)
 
@@ -192,6 +251,20 @@ def foundry_client():
 
 
 def ask_foundry(prompt):
+    # Option 1: Direct Azure OpenAI with API Key (Recommended for Vercel / Cloud)
+    if AZURE_OPENAI_KEY and AZURE_OPENAI_ENDPOINT:
+        client = AzureOpenAI(
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            api_key=AZURE_OPENAI_KEY,
+            api_version="2024-08-01-preview",
+        )
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content
+
+    # Option 2: Azure AI Foundry Agent (DefaultAzureCredential fallback)
     client = foundry_client()
     conversation = client.conversations.create()
 
@@ -625,11 +698,15 @@ def index():
 
 @app.get("/api/health")
 def health():
+    ai_ready = bool(
+        AZURE_OPENAI_KEY
+        or (FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_AGENT_NAME)
+    )
     return jsonify({
         "ok": True,
-        "gmail": CREDENTIALS_FILE.exists(),
+        "gmail": get_credentials_file().exists() or get_token_file().exists(),
         "notion": notion_configured(),
-        "foundry": bool(FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_AGENT_NAME),
+        "foundry": ai_ready,
     })
 
 
@@ -734,7 +811,8 @@ def api_schedule():
 @app.post("/api/scan")
 def api_scan():
     try:
-        emails = get_gmail_emails("in:inbox newer_than:30d", 50)
+        scan_limit = 15 if os.getenv("VERCEL") else 50
+        emails = get_gmail_emails("in:inbox newer_than:30d", scan_limit)
         analysis = analyze_emails_for_tasks(emails)
 
         created = 0
@@ -776,4 +854,5 @@ def api_scan():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
