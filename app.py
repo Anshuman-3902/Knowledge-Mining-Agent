@@ -714,6 +714,20 @@ into one item and put all relevant Gmail IDs in gmail_ids.
 
 Never invent dates, deadlines, subjects, courses or instructions.
 
+CRITICAL TITLE FORMAT:
+- "title" MUST be a clear, high-signal SUMMARIZED TITLE that tells the student WHAT the email is about at a glance.
+- Put the Course, Subject, or Topic FIRST, followed by the specific announcement or action.
+- Format: "<Course/Topic>: <Brief announcement or required action>"
+- Examples:
+  * "ACM Winter School: Apply by Oct 5"
+  * "Full Stack SDP: Course Handout (CHO) Released"
+  * "BE Civil Sem 2: Re-Appear Evaluation Result"
+  * "BE Civil AIML: Re-Evaluation Circular"
+  * "CSE Sem 7: Revised Class Timetable"
+  * "Calculus: Assignment 3 Submission Deadline"
+- Do NOT start with generic action verbs alone (e.g., avoid "Read Course Handout", "Apply for ACM", "Check result").
+- Keep "title" under 60 characters so it fits neatly in tables and dashboards without truncation.
+
 Return ONLY valid JSON:
 {{
   "items": [
@@ -724,6 +738,7 @@ Return ONLY valid JSON:
       "category": "",
       "course": "",
       "title": "",
+      "summary": "",
       "task": "",
       "deadline": "",
       "exam_date": "",
@@ -943,28 +958,46 @@ def create_notion_task(item, source_email_id, source_account=None):
             "date": {"start": f"{year}-{int(month):02d}-{int(day):02d}"}
         }
 
-    body_parts = []
-    if source_account:
-        body_parts.append(f"Source Account: {source_account}")
-    body_parts.extend([
-        item.get("task"),
-        item.get("important_information"),
-        item.get("location"),
-        item.get("attachment_information"),
-    ])
-    body = "\n".join(part for part in body_parts if part)
-
     children = []
-    if body:
+    
+    # 1. Summary Block
+    summary_text = (item.get("summary") or item.get("task") or "").strip()
+    if summary_text:
+        children.append({
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"type": "emoji", "emoji": "📌"},
+                "rich_text": [{
+                    "type": "text",
+                    "text": {"content": f"Summary: {summary_text[:1800]}"}
+                }]
+            }
+        })
+
+    # 2. Action Required / Details Block
+    details = []
+    if item.get("task") and item.get("task") != summary_text:
+        details.append(f"• Action: {item.get('task')}")
+    if item.get("important_information"):
+        details.append(f"• Key Info: {item.get('important_information')}")
+    if item.get("location"):
+        details.append(f"• Portal / Link: {item.get('location')}")
+    if item.get("attachment_information"):
+        details.append(f"• Attachments: {item.get('attachment_information')}")
+    if source_account:
+        details.append(f"• Account: {source_account}")
+
+    if details:
         children.append({
             "object": "block",
             "type": "paragraph",
             "paragraph": {
                 "rich_text": [{
                     "type": "text",
-                    "text": {"content": body[:1900]}
+                    "text": {"content": "\n".join(details)[:1900]}
                 }]
-            },
+            }
         })
 
     response = requests.post(
