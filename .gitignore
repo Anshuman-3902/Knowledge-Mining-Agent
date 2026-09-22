@@ -73,3 +73,5 @@ desktop.ini
 logs/
 tmp/
 scratch/
+uploads/*
+!uploads/.gitkeep

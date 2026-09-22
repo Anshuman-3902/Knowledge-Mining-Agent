@@ -8,7 +8,8 @@ const views = {
     chat: document.getElementById("chatView"),
     tasks: document.getElementById("tasksView"),
     schedule: document.getElementById("scheduleView"),
-    emails: document.getElementById("emailsView")
+    emails: document.getElementById("emailsView"),
+    documents: document.getElementById("documentsView")
 };
 
 function showView(name) {
@@ -24,6 +25,7 @@ function showView(name) {
     if (name === "tasks") loadTasks();
     if (name === "schedule") loadSchedule();
     if (name === "emails") loadEmails();
+    if (name === "documents") loadDocuments();
 }
 
 navPills.forEach(button => {
@@ -403,6 +405,383 @@ function showToast(message) {
 
 
 // -------------------------
+// Document Intelligence Studio
+// -------------------------
+
+const dropZone = document.getElementById("dropZone");
+const docFileInput = document.getElementById("docFileInput");
+const uploadTriggerBtn = document.getElementById("uploadTriggerBtn");
+const uploadStatus = document.getElementById("uploadStatus");
+
+const documentList = document.getElementById("documentList");
+const docCountBadge = document.getElementById("docCountBadge");
+
+const docViewerEmpty = document.getElementById("docViewerEmpty");
+const docViewerActive = document.getElementById("docViewerActive");
+
+const activeDocTitle = document.getElementById("activeDocTitle");
+const activeDocMeta = document.getElementById("activeDocMeta");
+const activeDocOverview = document.getElementById("activeDocOverview");
+const activeDocKeyPoints = document.getElementById("activeDocKeyPoints");
+const activeDocDeadlines = document.getElementById("activeDocDeadlines");
+const activeDocActionItems = document.getElementById("activeDocActionItems");
+const activeDocActionsWrap = document.getElementById("activeDocActionsWrap");
+const deleteActiveDocBtn = document.getElementById("deleteActiveDocBtn");
+
+const docChatMessages = document.getElementById("docChatMessages");
+const docChatForm = document.getElementById("docChatForm");
+const docQuestionInput = document.getElementById("docQuestionInput");
+const docAskBtn = document.getElementById("docAskBtn");
+const docChatStatus = document.getElementById("docChatStatus");
+
+let currentActiveDoc = null;
+let documentsRegistry = [];
+
+// Drag and drop setup
+if (dropZone && docFileInput) {
+    if (uploadTriggerBtn) {
+        uploadTriggerBtn.addEventListener("click", () => docFileInput.click());
+    }
+
+    dropZone.addEventListener("click", () => docFileInput.click());
+
+    ["dragenter", "dragover"].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add("dragover");
+        });
+    });
+
+    ["dragleave", "drop"].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove("dragover");
+        });
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+            handleDocumentUpload(files[0]);
+        }
+    });
+
+    docFileInput.addEventListener("change", () => {
+        if (docFileInput.files && docFileInput.files.length > 0) {
+            handleDocumentUpload(docFileInput.files[0]);
+            docFileInput.value = ""; // Reset
+        }
+    });
+}
+
+async function handleDocumentUpload(file) {
+    const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md"];
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+
+    if (!validExtensions.includes(ext)) {
+        if (uploadStatus) {
+            uploadStatus.className = "upload-status error";
+            uploadStatus.textContent = `Unsupported file type: ${ext}. Please upload a PDF, Word, or Text document.`;
+        }
+        showToast("Unsupported file type");
+        return;
+    }
+
+    if (uploadStatus) {
+        uploadStatus.className = "upload-status loading";
+        uploadStatus.innerHTML = `<span>⏳ Uploading <strong>${escapeHtml(file.name)}</strong> and generating AI executive summary...</span>`;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const response = await fetch("/api/documents/upload", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Failed to upload and analyze document");
+        }
+
+        if (uploadStatus) {
+            uploadStatus.className = "upload-status success";
+            uploadStatus.textContent = `✓ Document successfully analyzed!`;
+            setTimeout(() => { uploadStatus.textContent = ""; }, 5000);
+        }
+
+        showToast(`Document "${file.name}" scanned and summarized!`);
+        await loadDocuments(data.document ? data.document.id : null);
+    } catch (err) {
+        console.error("Upload error:", err);
+        if (uploadStatus) {
+            uploadStatus.className = "upload-status error";
+            uploadStatus.textContent = `Upload failed: ${err.message}`;
+        }
+        showToast(`Upload failed: ${err.message}`);
+    }
+}
+
+async function loadDocuments(selectDocId = null) {
+    if (!documentList) return;
+
+    try {
+        const response = await fetch("/api/documents");
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            documentList.innerHTML = `<div class="empty-state"><p>Could not load documents: ${data.error || "Unknown error"}</p></div>`;
+            return;
+        }
+
+        documentsRegistry = data.documents || [];
+
+        if (docCountBadge) {
+            docCountBadge.textContent = `${documentsRegistry.length} file${documentsRegistry.length === 1 ? "" : "s"}`;
+        }
+
+        if (documentsRegistry.length === 0) {
+            documentList.innerHTML = `<div class="panel-loading" style="padding:32px 10px;text-align:center">No documents uploaded yet. Drop a PDF or Word doc above!</div>`;
+            currentActiveDoc = null;
+            if (docViewerActive) docViewerActive.style.display = "none";
+            if (docViewerEmpty) docViewerEmpty.style.display = "block";
+            return;
+        }
+
+        // Render library list
+        documentList.innerHTML = documentsRegistry.map(doc => {
+            const extIcon = doc.file_type === "pdf" ? "📕" : doc.file_type === "docx" ? "📘" : "📄";
+            const isActive = currentActiveDoc && currentActiveDoc.id === doc.id;
+            return `
+                <div class="doc-item ${isActive ? "active" : ""}" data-doc-id="${escapeHtml(doc.id)}">
+                    <div class="doc-item-icon">${extIcon}</div>
+                    <div class="doc-item-body">
+                        <div class="doc-item-title" title="${escapeHtml(doc.filename)}">${escapeHtml(doc.filename)}</div>
+                        <div class="doc-item-meta">
+                            <span>${escapeHtml(doc.file_type.toUpperCase())}</span>
+                            <span>•</span>
+                            <span>${escapeHtml(doc.file_size)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        // Attach item click handlers
+        documentList.querySelectorAll(".doc-item").forEach(item => {
+            item.addEventListener("click", () => {
+                selectDocument(item.dataset.docId);
+            });
+        });
+
+        // Determine which document to select
+        let targetId = selectDocId;
+        if (!targetId && currentActiveDoc) {
+            const exists = documentsRegistry.some(d => d.id === currentActiveDoc.id);
+            if (exists) targetId = currentActiveDoc.id;
+        }
+        if (!targetId && documentsRegistry.length > 0) {
+            targetId = documentsRegistry[0].id;
+        }
+
+        if (targetId) {
+            await selectDocument(targetId);
+        }
+    } catch (err) {
+        console.error("Load documents error:", err);
+        documentList.innerHTML = `<div class="empty-state"><p>Error fetching documents.</p></div>`;
+    }
+}
+
+async function selectDocument(docId) {
+    try {
+        const response = await fetch(`/api/documents/${docId}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success || !data.document) {
+            showToast("Failed to load document details");
+            return;
+        }
+
+        currentActiveDoc = data.document;
+
+        // Highlight in list
+        if (documentList) {
+            documentList.querySelectorAll(".doc-item").forEach(el => {
+                el.classList.toggle("active", el.dataset.docId === docId);
+            });
+        }
+
+        // Show viewer content
+        if (docViewerEmpty) docViewerEmpty.style.display = "none";
+        if (docViewerActive) docViewerActive.style.display = "block";
+
+        // Fill meta bar
+        if (activeDocTitle) activeDocTitle.textContent = currentActiveDoc.filename;
+        if (activeDocMeta) {
+            const dateStr = formatDate(currentActiveDoc.uploaded_at);
+            activeDocMeta.textContent = `${currentActiveDoc.file_type.toUpperCase()} · ${currentActiveDoc.file_size} · Uploaded ${dateStr}`;
+        }
+
+        // Fill summary
+        const summary = currentActiveDoc.summary || {};
+        if (activeDocOverview) {
+            activeDocOverview.textContent = summary.overview || "No executive summary available for this document.";
+        }
+
+        // Key Points
+        if (activeDocKeyPoints) {
+            const points = Array.isArray(summary.key_points) ? summary.key_points : [];
+            activeDocKeyPoints.innerHTML = points.length > 0
+                ? points.map(pt => `<li>${escapeHtml(pt)}</li>`).join("")
+                : `<li>No key points identified.</li>`;
+        }
+
+        // Deadlines & Dates
+        if (activeDocDeadlines) {
+            const deadlines = Array.isArray(summary.deadlines) ? summary.deadlines : [];
+            activeDocDeadlines.innerHTML = deadlines.length > 0
+                ? deadlines.map(dl => `<li>${escapeHtml(dl)}</li>`).join("")
+                : `<li>No specific dates or deadlines found.</li>`;
+        }
+
+        // Action Items
+        if (activeDocActionItems && activeDocActionsWrap) {
+            const actions = Array.isArray(summary.action_items) ? summary.action_items : [];
+            if (actions.length > 0) {
+                activeDocActionsWrap.style.display = "block";
+                activeDocActionItems.innerHTML = actions.map(act => `<li>${escapeHtml(act)}</li>`).join("");
+            } else {
+                activeDocActionsWrap.style.display = "none";
+            }
+        }
+
+        // Reset document chat thread
+        if (docChatMessages) {
+            docChatMessages.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">✦</div>
+                    <div class="message-content">
+                        <div class="message-sender">Document Assistant</div>
+                        <div class="bubble">I've thoroughly analyzed <strong>${escapeHtml(currentActiveDoc.filename)}</strong>. Ask me any question about its contents, rules, grading, or deadlines!</div>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (err) {
+        console.error("Select document error:", err);
+        showToast("Error loading document");
+    }
+}
+
+// Grounded Document Chat
+if (docChatForm) {
+    docChatForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (!currentActiveDoc) {
+            showToast("Please select or upload a document first.");
+            return;
+        }
+
+        const question = docQuestionInput ? docQuestionInput.value.trim() : "";
+        if (!question) return;
+
+        // Append user message
+        const userMsg = document.createElement("div");
+        userMsg.className = "message user";
+        userMsg.innerHTML = `
+            <div class="message-avatar">You</div>
+            <div class="message-content">
+                <div class="message-sender">You</div>
+                <div class="bubble">${escapeHtml(question)}</div>
+            </div>
+        `;
+        docChatMessages.appendChild(userMsg);
+        docChatMessages.scrollTop = docChatMessages.scrollHeight;
+
+        if (docQuestionInput) docQuestionInput.value = "";
+        if (docChatStatus) docChatStatus.textContent = "Grounding answer in document text with Foundry AI…";
+        if (docAskBtn) docAskBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/documents/${currentActiveDoc.id}/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || "Failed to get answer");
+            }
+
+            const botMsg = document.createElement("div");
+            botMsg.className = "message assistant";
+            botMsg.innerHTML = `
+                <div class="message-avatar">✦</div>
+                <div class="message-content">
+                    <div class="message-sender">Document Assistant</div>
+                    <div class="bubble">${escapeHtml(data.answer)}</div>
+                </div>
+            `;
+            docChatMessages.appendChild(botMsg);
+            docChatMessages.scrollTop = docChatMessages.scrollHeight;
+        } catch (err) {
+            console.error("Doc chat error:", err);
+            const errDiv = document.createElement("div");
+            errDiv.className = "message assistant";
+            errDiv.innerHTML = `
+                <div class="message-avatar">!</div>
+                <div class="message-content">
+                    <div class="message-sender">Document Assistant</div>
+                    <div class="bubble" style="color:#ef4444">Error: ${escapeHtml(err.message)}</div>
+                </div>
+            `;
+            docChatMessages.appendChild(errDiv);
+        } finally {
+            if (docChatStatus) docChatStatus.textContent = "";
+            if (docAskBtn) docAskBtn.disabled = false;
+        }
+    });
+}
+
+// Delete Active Document
+if (deleteActiveDocBtn) {
+    deleteActiveDocBtn.addEventListener("click", async () => {
+        if (!currentActiveDoc) return;
+
+        const ok = confirm(`Are you sure you want to delete "${currentActiveDoc.filename}" from your Document Studio?`);
+        if (!ok) return;
+
+        try {
+            const response = await fetch(`/api/documents/${currentActiveDoc.id}`, {
+                method: "DELETE"
+            });
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || "Failed to delete document");
+            }
+
+            showToast(`Document "${currentActiveDoc.filename}" deleted.`);
+            currentActiveDoc = null;
+            await loadDocuments();
+        } catch (err) {
+            console.error("Delete document error:", err);
+            showToast(`Could not delete document: ${err.message}`);
+        }
+    });
+}
+
+
+// -------------------------
 // Theme (Light / Dark Mode)
 // -------------------------
 
@@ -440,3 +819,4 @@ if (themeToggleBtn) {
 
 checkHealth();
 loadStats();
+loadDocuments();

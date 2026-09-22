@@ -2,6 +2,8 @@ import os
 import json
 import re
 import base64
+import uuid
+import datetime
 from pathlib import Path
 
 import requests
@@ -9,6 +11,10 @@ from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
+
+import pypdf
+import docx
 
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
@@ -1332,6 +1338,309 @@ def api_scan():
 
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# -------------------------
+# Document Intelligence Studio
+# -------------------------
+
+def get_uploads_dir():
+    uploads_dir = BASE_DIR / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    return uploads_dir
+
+
+def get_documents_file():
+    return get_uploads_dir() / "documents.json"
+
+
+def load_documents_registry():
+    doc_file = get_documents_file()
+    if not doc_file.exists():
+        return {"documents": []}
+    try:
+        return json.loads(doc_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {"documents": []}
+
+
+def save_documents_registry(data):
+    doc_file = get_documents_file()
+    doc_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def format_file_size(bytes_num):
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if bytes_num < 1024.0:
+            return f"{bytes_num:.1f} {unit}" if unit != 'B' else f"{int(bytes_num)} B"
+        bytes_num /= 1024.0
+    return f"{bytes_num:.1f} TB"
+
+
+def extract_text_from_file(file_path):
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".pdf":
+        reader = pypdf.PdfReader(str(file_path))
+        pages = []
+        for idx, page in enumerate(reader.pages, 1):
+            t = page.extract_text() or ""
+            if t.strip():
+                pages.append(f"--- [Page {idx}] ---\n{t.strip()}")
+        return "\n\n".join(pages), len(reader.pages)
+    elif suffix in {".docx", ".doc"}:
+        doc = docx.Document(str(file_path))
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        return "\n\n".join(paragraphs), 1
+    else:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        return text, 1
+
+
+def summarize_document_with_foundry(text, filename):
+    prompt = f"""
+MODE: STRUCTURED ACADEMIC DOCUMENT SUMMARY
+
+You are an expert Academic Research Assistant.
+
+Analyze the document excerpt below ("{filename}") and provide an executive-level summary and actionable extraction.
+
+IMPORTANT:
+- Return ONLY valid JSON.
+- Never wrap with conversational preamble or code block formatting.
+- Capture concrete details, requirements, deadlines, grading schemes, or syllabus points if present.
+
+Return valid JSON conforming to this schema:
+{{
+  "title": "Clear concise title or topic for this document",
+  "overview": "2-3 well-structured paragraphs summarizing the document's core content, context, and purpose.",
+  "key_points": [
+    "Key concept, rule, or takeaway 1",
+    "Key concept, rule, or takeaway 2"
+  ],
+  "deadlines": [
+    "Important date or submission deadline (or 'No specific deadlines found')",
+    "Next milestone or exam date"
+  ],
+  "action_items": [
+    "Concrete action or preparation the student should take",
+    "Next step"
+  ]
+}}
+
+Document Excerpt ({filename}):
+{text[:28000]}
+"""
+    raw = ask_foundry(prompt)
+    parsed = parse_json_response(raw)
+    if isinstance(parsed, dict) and "overview" in parsed:
+        return parsed
+
+    return {
+        "title": filename,
+        "overview": str(raw).strip(),
+        "key_points": [],
+        "deadlines": [],
+        "action_items": []
+    }
+
+
+def chat_with_document_foundry(question, doc_meta, text):
+    prompt = f"""
+MODE: GROUNDED DOCUMENT Q&A
+
+You are a precise Academic Document Assistant.
+
+Answer the student's question accurately using ONLY the provided document text.
+Cite relevant page numbers, headings, or sections when possible.
+If the answer is NOT in the document text, explicitly say:
+"I cannot find this information in the provided document ({doc_meta.get('filename')})."
+
+Document: {doc_meta.get('filename')}
+Summary Overview: {doc_meta.get('summary', {}).get('overview', '')}
+
+Document Content:
+{text[:30000]}
+
+Student Question:
+{question}
+"""
+    return ask_foundry(prompt)
+
+
+@app.post("/api/documents/upload")
+def api_documents_upload():
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+
+    file = request.files["file"]
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "Empty filename."}), 400
+
+    filename = secure_filename(file.filename)
+    if not filename:
+        filename = f"upload_{uuid.uuid4().hex[:8]}.txt"
+
+    ext = Path(filename).suffix.lower()
+    allowed_exts = {".pdf", ".docx", ".doc", ".txt", ".md"}
+    if ext not in allowed_exts:
+        return jsonify({
+            "ok": False,
+            "error": f"Unsupported format '{ext}'. Allowed formats: PDF, DOCX, TXT, MD."
+        }), 400
+
+    uploads_dir = get_uploads_dir()
+    doc_id = f"doc_{uuid.uuid4().hex[:10]}"
+    stored_name = f"{doc_id}_{filename}"
+    saved_path = uploads_dir / stored_name
+    file.save(str(saved_path))
+
+    size_bytes = saved_path.stat().st_size
+    size_str = format_file_size(size_bytes)
+
+    try:
+        extracted_text, page_count = extract_text_from_file(saved_path)
+    except Exception as exc:
+        if saved_path.exists():
+            saved_path.unlink()
+        return jsonify({"ok": False, "error": f"Failed to extract document text: {exc}"}), 500
+
+    if not extracted_text.strip():
+        if saved_path.exists():
+            saved_path.unlink()
+        return jsonify({"ok": False, "error": "Document appears to be empty or scanned images without readable text."}), 400
+
+    # Save extracted text cache
+    text_cache_file = uploads_dir / f"{doc_id}.txt"
+    text_cache_file.write_text(extracted_text, encoding="utf-8")
+
+    # Generate AI summary
+    try:
+        summary = summarize_document_with_foundry(extracted_text, filename)
+    except Exception as exc:
+        summary = {
+            "title": filename,
+            "overview": f"Summary generation could not be completed: {exc}",
+            "key_points": [],
+            "deadlines": [],
+            "action_items": []
+        }
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    doc_entry = {
+        "id": doc_id,
+        "filename": filename,
+        "stored_filename": stored_name,
+        "file_type": ext.lstrip("."),
+        "size_bytes": size_bytes,
+        "size_formatted": size_str,
+        "page_count": page_count,
+        "char_count": len(extracted_text),
+        "uploaded_at": now_str,
+        "summary": summary
+    }
+
+    registry = load_documents_registry()
+    docs = registry.get("documents", [])
+    docs.insert(0, doc_entry)
+    registry["documents"] = docs
+    save_documents_registry(registry)
+
+    return jsonify({"ok": True, "success": True, "document": doc_entry})
+
+
+@app.get("/api/documents")
+def api_documents_list():
+    registry = load_documents_registry()
+    return jsonify({
+        "ok": True,
+        "success": True,
+        "documents": registry.get("documents", []),
+        "count": len(registry.get("documents", []))
+    })
+
+
+@app.get("/api/documents/<doc_id>")
+def api_documents_get(doc_id):
+    registry = load_documents_registry()
+    doc = next((d for d in registry.get("documents", []) if d["id"] == doc_id), None)
+    if not doc:
+        return jsonify({"ok": False, "success": False, "error": "Document not found."}), 404
+
+    text_cache = get_uploads_dir() / f"{doc_id}.txt"
+    text_content = text_cache.read_text(encoding="utf-8") if text_cache.exists() else ""
+
+    return jsonify({
+        "ok": True,
+        "success": True,
+        "document": doc,
+        "content_preview": text_content[:4000]
+    })
+
+
+@app.post("/api/documents/<doc_id>/chat")
+def api_documents_chat(doc_id):
+    body = request.get_json(silent=True) or {}
+    question = (body.get("question") or "").strip()
+    if not question:
+        return jsonify({"ok": False, "success": False, "error": "Question cannot be empty."}), 400
+
+    registry = load_documents_registry()
+    uploads_dir = get_uploads_dir()
+
+    if doc_id == "all":
+        docs = registry.get("documents", [])
+        if not docs:
+            return jsonify({"ok": False, "success": False, "error": "No documents uploaded yet."}), 400
+        combined_texts = []
+        for d in docs[:5]:
+            t_file = uploads_dir / f"{d['id']}.txt"
+            if t_file.exists():
+                combined_texts.append(f"=== DOCUMENT: {d['filename']} ===\n{t_file.read_text(encoding='utf-8')[:10000]}")
+        text = "\n\n".join(combined_texts)
+        doc_meta = {"filename": "All Uploaded Documents"}
+    else:
+        doc_meta = next((d for d in registry.get("documents", []) if d["id"] == doc_id), None)
+        if not doc_meta:
+            return jsonify({"ok": False, "success": False, "error": "Document not found."}), 404
+        t_file = uploads_dir / f"{doc_id}.txt"
+        if not t_file.exists():
+            return jsonify({"ok": False, "success": False, "error": "Document text cache missing."}), 404
+        text = t_file.read_text(encoding="utf-8")
+
+    try:
+        answer = chat_with_document_foundry(question, doc_meta, text)
+        return jsonify({
+            "ok": True,
+            "success": True,
+            "answer": answer,
+            "document": doc_meta.get("filename")
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "success": False, "error": str(exc)}), 500
+
+
+@app.delete("/api/documents/<doc_id>")
+def api_documents_delete(doc_id):
+    registry = load_documents_registry()
+    docs = registry.get("documents", [])
+    target = next((d for d in docs if d["id"] == doc_id), None)
+    if not target:
+        return jsonify({"ok": False, "success": False, "error": "Document not found."}), 404
+
+    uploads_dir = get_uploads_dir()
+    stored_path = uploads_dir / target.get("stored_filename", "")
+    if stored_path.exists():
+        stored_path.unlink()
+
+    txt_cache = uploads_dir / f"{doc_id}.txt"
+    if txt_cache.exists():
+        txt_cache.unlink()
+
+    registry["documents"] = [d for d in docs if d["id"] != doc_id]
+    save_documents_registry(registry)
+
+    return jsonify({"ok": True, "success": True, "deleted": doc_id})
 
 
 if __name__ == "__main__":

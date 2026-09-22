@@ -10,3 +10,5 @@ azure-ai-projects
 azure-identity
 openai
 gunicorn
+pypdf
+python-docx

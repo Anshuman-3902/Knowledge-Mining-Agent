@@ -48,6 +48,10 @@
                 <span class="pill-icon">✉</span>
                 <span>Emails</span>
             </button>
+            <button class="nav-pill" data-view="documents">
+                <span class="pill-icon">📄</span>
+                <span>Documents</span>
+            </button>
         </nav>
 
         <div class="header-actions">
@@ -56,8 +60,20 @@
                 <span id="systemStatus">All systems ready</span>
             </div>
             <button class="theme-toggle-btn" id="themeToggleBtn" aria-label="Toggle dark mode" title="Switch theme">
-                <span class="theme-icon theme-icon--light">☀️</span>
-                <span class="theme-icon theme-icon--dark">🌙</span>
+                <svg class="theme-svg theme-svg--sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v2"></path>
+                    <path d="M12 20v2"></path>
+                    <path d="m4.93 4.93 1.41 1.41"></path>
+                    <path d="m17.66 17.66 1.41 1.41"></path>
+                    <path d="M2 12h2"></path>
+                    <path d="M20 12h2"></path>
+                    <path d="m6.34 17.66-1.41 1.41"></path>
+                    <path d="m19.07 4.93-1.41 1.41"></path>
+                </svg>
+                <svg class="theme-svg theme-svg--moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                </svg>
             </button>
             <button class="clico-btn clico-btn--primary" id="scanBtn">
                 <span class="btn-icon">↻</span>
@@ -224,6 +240,126 @@
             </div>
             <div id="emailList" class="email-list">
                 <div class="panel-loading">Loading emails...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VIEW 5: Document Intelligence Studio -->
+    <section id="documentsView" class="view">
+        <div class="panel-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-tag">DOCUMENT INTELLIGENCE STUDIO</div>
+                    <h2 class="panel-title">Upload, Summarize &amp; Query Documents</h2>
+                </div>
+                <button class="clico-btn clico-btn--primary" id="uploadTriggerBtn">
+                    <span class="btn-icon">↑</span>
+                    <span>Upload Document</span>
+                </button>
+            </div>
+
+            <!-- Upload Dropzone -->
+            <div class="dropzone-wrap">
+                <div class="dropzone" id="dropZone">
+                    <input type="file" id="docFileInput" class="hidden-file-input" accept=".pdf,.docx,.doc,.txt,.md">
+                    <div class="dropzone-icon">📄</div>
+                    <div class="dropzone-copy">
+                        <strong>Drop your PDF, Word, or Text document here</strong>
+                        <span>or click to browse from your computer (Max 25MB)</span>
+                    </div>
+                    <div class="dropzone-tags">
+                        <span>.PDF</span>
+                        <span>.DOCX</span>
+                        <span>.TXT</span>
+                        <span>.MD</span>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="upload-status"></div>
+            </div>
+
+            <!-- Documents Workspace Layout -->
+            <div class="docs-workspace" id="docsWorkspace">
+                <!-- Left: Document Library Drawer -->
+                <aside class="docs-library">
+                    <div class="docs-library-header">
+                        <span>DOCUMENT LIBRARY</span>
+                        <span id="docCountBadge" class="doc-badge-count">0 files</span>
+                    </div>
+                    <div id="documentList" class="docs-library-list">
+                        <div class="panel-loading" style="padding:30px 10px">No documents uploaded yet.</div>
+                    </div>
+                </aside>
+
+                <!-- Right: Active Document Summary & Q&A -->
+                <div class="docs-viewer" id="docsViewer">
+                    <!-- Default Empty Placeholder -->
+                    <div class="doc-empty-state" id="docViewerEmpty">
+                        <div class="empty-icon">📄</div>
+                        <h3>No Document Selected</h3>
+                        <p>Upload a syllabus, lecture notes, or circular, or select one from your library to view its AI summary and start asking questions.</p>
+                    </div>
+
+                    <!-- Active Document Content (Hidden by default until selected) -->
+                    <div class="doc-active-content" id="docViewerActive" style="display:none">
+                        <!-- Document Header -->
+                        <div class="doc-meta-bar">
+                            <div>
+                                <h3 id="activeDocTitle" class="doc-meta-title">Document Title</h3>
+                                <div id="activeDocMeta" class="doc-meta-sub">PDF · 1.2 MB · Uploaded Today</div>
+                            </div>
+                            <button class="doc-delete-btn" id="deleteActiveDocBtn" title="Delete document">Delete</button>
+                        </div>
+
+                        <!-- Structured AI Summary Card -->
+                        <div class="doc-summary-box">
+                            <div class="doc-summary-header">
+                                <span class="summary-badge">AI EXECUTIVE SUMMARY</span>
+                                <span class="summary-model">Foundry AI</span>
+                            </div>
+                            <div id="activeDocOverview" class="doc-overview-text"></div>
+
+                            <div class="doc-summary-grid">
+                                <div class="summary-col">
+                                    <h4 class="summary-col-title">🔑 Key Takeaways</h4>
+                                    <ul id="activeDocKeyPoints" class="summary-bullet-list"></ul>
+                                </div>
+                                <div class="summary-col">
+                                    <h4 class="summary-col-title">📅 Dates &amp; Deadlines</h4>
+                                    <ul id="activeDocDeadlines" class="summary-bullet-list"></ul>
+                                </div>
+                            </div>
+
+                            <div class="doc-actions-section" id="activeDocActionsWrap">
+                                <h4 class="summary-col-title">📋 Action Items</h4>
+                                <ul id="activeDocActionItems" class="summary-bullet-list"></ul>
+                            </div>
+                        </div>
+
+                        <!-- Interactive Document Grounded Q&A -->
+                        <div class="doc-chat-section">
+                            <div class="doc-chat-header">
+                                <h4>Ask Questions About This Document</h4>
+                                <span class="doc-chat-hint">Answers are strictly grounded in the document text</span>
+                            </div>
+
+                            <div id="docChatMessages" class="doc-chat-messages">
+                                <div class="message assistant">
+                                    <div class="message-avatar">✦</div>
+                                    <div class="message-content">
+                                        <div class="message-sender">Document Assistant</div>
+                                        <div class="bubble">Ask me any specific question about this document — like key policies, grading schemes, deadlines, or test topics!</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <form id="docChatForm" class="doc-chat-form">
+                                <input id="docQuestionInput" placeholder="Ask a question about this document..." autocomplete="off" required>
+                                <button type="submit" class="doc-chat-submit" id="docAskBtn">Ask Document →</button>
+                            </form>
+                            <div id="docChatStatus" class="doc-chat-status"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
