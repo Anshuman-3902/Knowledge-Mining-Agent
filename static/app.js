@@ -403,6 +403,38 @@ function showToast(message) {
 
 
 // -------------------------
+// Theme (Light / Dark Mode)
+// -------------------------
+
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+function getStoredTheme() {
+    return localStorage.getItem("student_ai_theme") || "light";
+}
+
+function applyTheme(theme) {
+    if (theme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+    } else {
+        document.documentElement.removeAttribute("data-theme");
+    }
+    localStorage.setItem("student_ai_theme", theme);
+}
+
+// Initial theme apply
+applyTheme(getStoredTheme());
+
+if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+        const next = current === "dark" ? "light" : "dark";
+        applyTheme(next);
+        showToast(next === "dark" ? "🌙 Dark mode enabled" : "☀️ Light mode enabled");
+    });
+}
+
+
+// -------------------------
 // Initialize
 // -------------------------
 

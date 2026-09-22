@@ -48,6 +48,91 @@
     --font-heading: 'Plus Jakarta Sans', 'DM Sans', sans-serif;
 }
 
+/* ==========================================================================
+   Dark Mode Theme Overrides
+   ========================================================================== */
+
+[data-theme="dark"] {
+    --bg-canvas: #090c13;
+    --bg-surface: #121622;
+    --bg-surface-elevated: #181d2d;
+    --bg-muted: #181e2e;
+    --bg-soft-blue: #132038;
+    --bg-composer: #121622;
+    
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-hint: #475569;
+    
+    --border-subtle: #1e2638;
+    --border-strong: #2e3a52;
+    --border-focus: #818cf8;
+    
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-soft: rgba(99, 102, 241, 0.15);
+    
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6);
+    --shadow-composer: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .global-header {
+    background: rgba(9, 12, 19, 0.88);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-theme="dark"] .nav-cluster {
+    background: var(--bg-surface);
+    border-color: var(--border-subtle);
+}
+
+[data-theme="dark"] .nav-pill.active {
+    background: #f8fafc;
+    color: #090c13;
+    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .clico-btn--primary {
+    background: #f8fafc;
+    color: #090c13;
+}
+
+[data-theme="dark"] .clico-btn--primary:hover {
+    background: #e2e8f0;
+}
+
+[data-theme="dark"] .composer-submit {
+    background: #f8fafc;
+    color: #090c13;
+}
+
+[data-theme="dark"] .composer-submit:hover {
+    background: #e2e8f0;
+}
+
+[data-theme="dark"] .message.user .message-avatar {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+[data-theme="dark"] .message.user .bubble {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+[data-theme="dark"] .date-box {
+    background: #182236;
+    border-color: #233352;
+    color: #818cf8;
+}
+
+[data-theme="dark"] .announcement-banner {
+    background: linear-gradient(90deg, #07090f 0%, #111420 100%);
+}
+
 /* Reset & Base */
 *, *::before, *::after {
     box-sizing: border-box;
@@ -263,6 +348,47 @@ button {
     border-radius: 50%;
     background: var(--green);
     box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.theme-toggle-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s ease;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--bg-muted);
+    border-color: var(--border-strong);
+    transform: rotate(15deg);
+}
+
+.theme-icon {
+    font-size: 15px;
+    line-height: 1;
+    display: inline-block;
+}
+
+/* By default (light mode), show moon and hide sun */
+.theme-icon--light {
+    display: none;
+}
+.theme-icon--dark {
+    display: inline-block;
+}
+
+/* In dark mode, show sun and hide moon */
+[data-theme="dark"] .theme-icon--light {
+    display: inline-block;
+}
+[data-theme="dark"] .theme-icon--dark {
+    display: none;
 }
 
 .clico-btn {
