@@ -1,0 +1,55 @@
+name: 🐛 Bug Report
+description: Report a bug, crash, or unexpected behavior in Knowledge Mining Agent.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please ensure that you do not include sensitive data (passwords, tokens, API keys).
+
+  - type: input
+    id: version
+    attributes:
+      label: Python & Environment Version
+      description: What version of Python and OS are you using?
+      placeholder: e.g. Python 3.11.4, Windows 11 / Ubuntu 22.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the problem clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior.
+      placeholder: |
+        1. Run `python app.py`
+        2. Click on '...' or trigger endpoint '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: What should happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs & Output
+      description: Paste any terminal stack traces or browser console logs here.
+      render: shell

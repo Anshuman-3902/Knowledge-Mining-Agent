@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student AI</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar">
+    <div class="brand">
+        <div class="brand-mark">✦</div>
+        <div><div class="brand-title">Student AI</div><div class="brand-subtitle">Your academic assistant</div></div>
+    </div>
+
+    <div class="connection"><span class="status-dot"></span><span id="connectionText">Connecting...</span></div>
+
+    <nav>
+        <button class="nav-item active" data-view="chat">⌁ <span>AI Chat</span></button>
+        <button class="nav-item" data-view="tasks">✓ <span>Tasks</span></button>
+        <button class="nav-item" data-view="schedule">▣ <span>Schedule</span></button>
+        <button class="nav-item" data-view="emails">✉ <span>Emails</span></button>
+    </nav>
+
+    <div class="sidebar-bottom">
+        <button class="scan-button" id="scanBtn">↻ Scan Gmail</button>
+        <div class="mini-note">Foundry AI · Gmail · Notion</div>
+    </div>
+</aside>
+
+<main class="main">
+<header class="topbar">
+    <div>
+        <div class="eyebrow">STUDENT DASHBOARD</div>
+        <h1 id="pageTitle">Good evening 👋</h1>
+    </div>
+    <div class="top-status"><span class="status-dot"></span> <span id="systemStatus">Checking...</span></div>
+</header>
+
+<section class="stats">
+    <div class="stat-card"><div class="stat-icon">✉</div><div><strong id="emailsCount">—</strong><span>Today's emails</span></div></div>
+    <div class="stat-card"><div class="stat-icon">!</div><div><strong id="importantCount">—</strong><span>Important</span></div></div>
+    <div class="stat-card"><div class="stat-icon">✓</div><div><strong id="assignmentCount">—</strong><span>Assignments</span></div></div>
+    <div class="stat-card"><div class="stat-icon">↑</div><div><strong id="highCount">—</strong><span>High priority</span></div></div>
+</section>
+
+<section id="chatView" class="view active-view">
+<div class="chat-card">
+    <div class="card-header">
+        <div><span class="badge">AI ASSISTANT</span><h2>Ask anything about your college emails</h2></div>
+        <span class="live-pill"><span class="status-dot"></span> Connected</span>
+    </div>
+
+    <div id="chatMessages" class="chat-messages">
+        <div class="message assistant">
+            <div class="avatar">✦</div>
+            <div class="bubble">I can search your college Gmail and find assignments, exams, deadlines, timetables, announcements, and other academic information.</div>
+        </div>
+    </div>
+
+    <div class="suggestions">
+        <button data-question="What are the important mails today?">Important mails today</button>
+        <button data-question="What assignments do I have?">My assignments</button>
+        <button data-question="What deadlines do I have this week?">Deadlines this week</button>
+        <button data-question="What exams were announced?">Exams announced</button>
+    </div>
+
+    <form id="chatForm" class="chat-form">
+        <input id="questionInput" autocomplete="off" placeholder="Ask about your college emails...">
+        <button type="submit">Ask AI <span>→</span></button>
+    </form>
+    <div id="chatStatus" class="chat-status"></div>
+</div>
+</section>
+
+<section id="tasksView" class="view">
+<div class="section-card">
+    <div class="section-heading">
+        <div><span class="badge">NOTION</span><h2>Your academic tasks</h2></div>
+        <button class="secondary-btn" id="scanBtn2">Scan new emails</button>
+    </div>
+    <div id="taskList" class="task-list"><div class="loading">Loading Notion tasks...</div></div>
+</div>
+</section>
+
+<section id="scheduleView" class="view">
+<div class="section-card">
+    <div class="section-heading"><div><span class="badge">ACADEMIC</span><h2>Your academic schedule</h2></div></div>
+    <div id="scheduleList" class="schedule-list"><div class="loading">Loading schedule...</div></div>
+</div>
+</section>
+
+<section id="emailsView" class="view">
+<div class="section-card">
+    <div class="section-heading">
+        <div><span class="badge">GMAIL</span><h2>Your recent emails</h2></div>
+        <button class="secondary-btn" id="refreshEmails">Refresh</button>
+    </div>
+    <div id="emailList" class="email-list"><div class="loading">Loading recent emails...</div></div>
+</div>
+</section>
+
+</main>
+</div>
+<div id="toast" class="toast"></div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
