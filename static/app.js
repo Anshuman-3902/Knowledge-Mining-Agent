@@ -1,4 +1,8 @@
-const navItems = document.querySelectorAll(".nav-item");
+// ==========================================================================
+// Student AI · Knowledge Mining Studio Frontend Controller
+// ==========================================================================
+
+const navPills = document.querySelectorAll(".nav-pill");
 
 const views = {
     chat: document.getElementById("chatView"),
@@ -7,120 +11,164 @@ const views = {
     emails: document.getElementById("emailsView")
 };
 
-const titles = {
-    chat: "Good evening 👋",
-    tasks: "Your academic tasks",
-    schedule: "Your academic schedule",
-    emails: "Your recent emails"
-};
-
 function showView(name) {
     Object.entries(views).forEach(([key, element]) => {
-        element.classList.toggle("active-view", key === name);
+        if (element) {
+            element.classList.toggle("active-view", key === name);
+        }
     });
-    navItems.forEach(button => {
+    navPills.forEach(button => {
         button.classList.toggle("active", button.dataset.view === name);
     });
-    document.getElementById("pageTitle").textContent = titles[name];
 
     if (name === "tasks") loadTasks();
     if (name === "schedule") loadSchedule();
     if (name === "emails") loadEmails();
 }
 
-navItems.forEach(button => {
+navPills.forEach(button => {
     button.addEventListener("click", () => showView(button.dataset.view));
 });
 
 
 // -------------------------
-// Single Account Mode
+// Chat & Composer
 // -------------------------
 
-let activeAccount = "";
+const questionInput = document.getElementById("questionInput");
+const chatForm = document.getElementById("chatForm");
+const chatMessages = document.getElementById("chatMessages");
+const chatStatus = document.getElementById("chatStatus");
 
+// Auto-adjust textarea height
+if (questionInput) {
+    questionInput.addEventListener("input", function() {
+        this.style.height = "auto";
+        this.style.height = Math.min(this.scrollHeight, 180) + "px";
+    });
 
-// -------------------------
-// Chat
-// -------------------------
+    // Enter to submit, Shift+Enter for newline
+    questionInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            chatForm.dispatchEvent(new Event("submit", {cancelable: true}));
+        }
+    });
+}
 
 function addMessage(text, role = "assistant") {
-    const container = document.getElementById("chatMessages");
     const item = document.createElement("div");
     item.className = `message ${role}`;
 
     const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    avatar.textContent = role === "assistant" ? "✦" : "A";
+    avatar.className = "message-avatar";
+    avatar.textContent = role === "assistant" ? "✦" : "You";
+
+    const content = document.createElement("div");
+    content.className = "message-content";
+
+    const sender = document.createElement("div");
+    sender.className = "message-sender";
+    sender.textContent = role === "assistant" ? "Student AI Studio" : "You";
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     bubble.textContent = text;
 
+    content.appendChild(sender);
+    content.appendChild(bubble);
     item.appendChild(avatar);
-    item.appendChild(bubble);
-    container.appendChild(item);
-    container.scrollTop = container.scrollHeight;
+    item.appendChild(content);
+
+    chatMessages.appendChild(item);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 async function askAI(question) {
     addMessage(question, "user");
+    chatStatus.textContent = "Searching your college Gmail and consulting Foundry AI…";
 
-    const status = document.getElementById("chatStatus");
-    const accLabel = activeAccount === "all" ? "all accounts" : (activeAccount || "Gmail");
-    status.textContent = `Searching ${accLabel} and asking Foundry AI…`;
+    const askBtn = document.getElementById("askBtn");
+    if (askBtn) askBtn.disabled = true;
 
     try {
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({question, account: activeAccount || undefined})
+            body: JSON.stringify({question})
         });
 
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || "Request failed.");
 
         addMessage(data.answer, "assistant");
-        status.textContent = `${data.emails_found} email(s) checked · ${data.account || ""}`;
+        chatStatus.textContent = `✓ Checked ${data.emails_found} relevant emails · Foundry AI active`;
     } catch (error) {
         addMessage(`I couldn't complete that request: ${error.message}`, "assistant");
-        status.textContent = "Request failed.";
+        chatStatus.textContent = "Request failed. Please try again.";
+    } finally {
+        if (askBtn) askBtn.disabled = false;
+        if (questionInput) {
+            questionInput.style.height = "auto";
+        }
     }
 }
 
-document.getElementById("chatForm").addEventListener("submit", async event => {
-    event.preventDefault();
-    const input = document.getElementById("questionInput");
-    const question = input.value.trim();
-    if (!question) return;
-    input.value = "";
-    await askAI(question);
+if (chatForm) {
+    chatForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        const question = questionInput.value.trim();
+        if (!question) return;
+        questionInput.value = "";
+        await askAI(question);
+    });
+}
+
+// Suggestion Chips
+document.querySelectorAll(".chip-btn").forEach(button => {
+    button.addEventListener("click", () => {
+        const q = button.dataset.question;
+        if (q) askAI(q);
+    });
 });
 
-document.querySelectorAll(".suggestions button").forEach(button => {
-    button.addEventListener("click", () => askAI(button.dataset.question));
-});
+// Clear Chat
+const clearChatBtn = document.getElementById("clearChatBtn");
+if (clearChatBtn) {
+    clearChatBtn.addEventListener("click", () => {
+        chatMessages.innerHTML = `
+            <div class="message assistant">
+                <div class="message-avatar">✦</div>
+                <div class="message-content">
+                    <div class="message-sender">Student AI Studio</div>
+                    <div class="bubble">Chat cleared. Ask me anything about your college emails, assignments, or deadlines!</div>
+                </div>
+            </div>
+        `;
+        chatStatus.textContent = "";
+    });
+}
 
 
 // -------------------------
-// Tasks
+// Notion Tasks
 // -------------------------
 
 async function loadTasks() {
     const list = document.getElementById("taskList");
-    list.innerHTML = '<div class="loading">Loading Notion tasks...</div>';
+    list.innerHTML = '<div class="panel-loading">Loading tasks from Notion...</div>';
 
     try {
         const response = await fetch("/api/tasks");
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
 
-        if (!data.tasks.length) {
+        if (!data.tasks || !data.tasks.length) {
             list.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-icon">✓</div>
-                    <h3>No tasks found</h3>
-                    <p>Click "Scan new emails" to find actionable academic work and add it to Notion.</p>
+                    <h3>No tasks found in Notion</h3>
+                    <p>Click "Scan New Emails" above to mine your college inbox and extract tasks automatically.</p>
                 </div>`;
             return;
         }
@@ -141,25 +189,25 @@ async function loadTasks() {
             </div>
         `).join("");
     } catch (error) {
-        list.innerHTML = `<div class="loading">Could not load Notion tasks: ${escapeHtml(error.message)}</div>`;
+        list.innerHTML = `<div class="panel-loading">Could not load Notion tasks: ${escapeHtml(error.message)}</div>`;
     }
 }
 
 
 // -------------------------
-// Schedule
+// Academic Schedule
 // -------------------------
 
 async function loadSchedule() {
     const list = document.getElementById("scheduleList");
-    list.innerHTML = '<div class="loading">Loading schedule...</div>';
+    list.innerHTML = '<div class="panel-loading">Loading schedule...</div>';
 
     try {
         const response = await fetch("/api/schedule");
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
 
-        if (!data.events.length) {
+        if (!data.events || !data.events.length) {
             list.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-icon">▣</div>
@@ -172,70 +220,69 @@ async function loadSchedule() {
         list.innerHTML = data.events.map(event => `
             <div class="schedule-row">
                 <div class="date-box">${escapeHtml(formatDate(event.date))}</div>
-                <div>
+                <div class="task-main">
                     <div class="task-title">${escapeHtml(event.title)}</div>
-                    <div class="task-meta">${escapeHtml(event.course || "Academic")} · ${escapeHtml(event.priority)}</div>
+                    <div class="task-meta">${escapeHtml(event.course || "Academic")} · Priority: ${escapeHtml(event.priority)}</div>
                 </div>
             </div>
         `).join("");
     } catch (error) {
-        list.innerHTML = `<div class="loading">Could not load schedule: ${escapeHtml(error.message)}</div>`;
+        list.innerHTML = `<div class="panel-loading">Could not load schedule: ${escapeHtml(error.message)}</div>`;
     }
 }
 
 
 // -------------------------
-// Emails
+// Gmail Emails
 // -------------------------
 
 async function loadEmails() {
     const list = document.getElementById("emailList");
-    list.innerHTML = '<div class="loading">Loading recent emails...</div>';
+    list.innerHTML = '<div class="panel-loading">Loading recent emails from Gmail...</div>';
 
     try {
-        const accParam = activeAccount ? `?account=${encodeURIComponent(activeAccount)}` : "";
-        const response = await fetch(`/api/emails${accParam}`);
+        const response = await fetch("/api/emails");
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
 
-        if (!data.emails.length) {
-            list.innerHTML = '<div class="loading">No recent emails found.</div>';
+        if (!data.emails || !data.emails.length) {
+            list.innerHTML = '<div class="panel-loading">No recent emails found in inbox.</div>';
             return;
         }
 
-        const showAccount = activeAccount === "all";
         list.innerHTML = data.emails.map(email => `
             <div class="email-row">
                 <div class="email-subject">${escapeHtml(email.subject || "(No subject)")}</div>
                 <div class="email-meta">${escapeHtml(email.sender || "")} · ${escapeHtml(email.date || "")}</div>
-                ${showAccount && email.account ? `<span class="email-account-tag">${escapeHtml(email.account)}</span>` : ""}
             </div>
         `).join("");
     } catch (error) {
-        list.innerHTML = `<div class="loading">Could not load emails: ${escapeHtml(error.message)}</div>`;
+        list.innerHTML = `<div class="panel-loading">Could not load emails: ${escapeHtml(error.message)}</div>`;
     }
 }
 
-document.getElementById("refreshEmails").addEventListener("click", loadEmails);
+const refreshEmailsBtn = document.getElementById("refreshEmails");
+if (refreshEmailsBtn) {
+    refreshEmailsBtn.addEventListener("click", loadEmails);
+}
 
 
 // -------------------------
-// Stats
+// Stats Metric Ribbon
 // -------------------------
 
 async function loadStats() {
     try {
-        const accParam = activeAccount ? `?account=${encodeURIComponent(activeAccount)}` : "";
-        const response = await fetch(`/api/stats${accParam}`);
+        const response = await fetch("/api/stats");
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
 
-        document.getElementById("emailsCount").textContent = data.today_emails;
-        document.getElementById("importantCount").textContent = data.important;
-        document.getElementById("assignmentCount").textContent = data.assignments;
-        document.getElementById("highCount").textContent = data.high_priority;
+        document.getElementById("emailsCount").textContent = data.today_emails ?? 0;
+        document.getElementById("importantCount").textContent = data.important ?? 0;
+        document.getElementById("assignmentCount").textContent = data.assignments ?? 0;
+        document.getElementById("highCount").textContent = data.high_priority ?? 0;
     } catch (error) {
-        console.error(error);
+        console.error("Failed to load stats:", error);
         document.getElementById("emailsCount").textContent = "—";
         document.getElementById("importantCount").textContent = "—";
         document.getElementById("assignmentCount").textContent = "—";
@@ -245,7 +292,7 @@ async function loadStats() {
 
 
 // -------------------------
-// Health check
+// System Health Check
 // -------------------------
 
 async function checkHealth() {
@@ -256,7 +303,7 @@ async function checkHealth() {
         if (data.ok && data.gmail && data.notion && data.foundry) {
             document.getElementById("systemStatus").textContent = "All systems ready";
         } else {
-            document.getElementById("systemStatus").textContent = "Configuration needed";
+            document.getElementById("systemStatus").textContent = "Config needed";
         }
     } catch (_) {
         document.getElementById("systemStatus").textContent = "Backend offline";
@@ -265,52 +312,61 @@ async function checkHealth() {
 
 
 // -------------------------
-// Gmail Scan
+// Gmail Scan & Sync
 // -------------------------
 
 async function scanGmail() {
-    const buttons = [
+    const scanButtons = [
         document.getElementById("scanBtn"),
-        document.getElementById("scanBtn2")
-    ];
+        document.getElementById("scanBtn2"),
+        document.getElementById("bannerScanBtn")
+    ].filter(Boolean);
 
-    buttons.forEach(button => {
-        button.disabled = true;
-        button.textContent = "Scanning...";
+    scanButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = "Scanning…";
     });
 
-    showToast("Scanning Gmail and creating Notion tasks...");
+    showToast("Scanning Gmail with Foundry AI and updating Notion tasks…");
 
     try {
-        const body = activeAccount ? {account: activeAccount} : {};
         const response = await fetch("/api/scan", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(body)
+            body: JSON.stringify({})
         });
+
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
 
         if (data.failures && data.failures.length) {
-            showToast(`Scan completed with ${data.failures.length} issue(s).`);
-            console.error(data.failures);
+            showToast(`Scan completed with ${data.failures.length} warning(s).`);
+            console.warn(data.failures);
         } else {
-            showToast(`${data.tasks_created} task(s) created · ${data.tasks_skipped} duplicate(s) skipped.`);
+            showToast(`✓ Scan complete: ${data.tasks_created} new task(s) created in Notion!`);
         }
 
         await Promise.all([loadTasks(), loadStats(), loadSchedule()]);
     } catch (error) {
         showToast(`Scan failed: ${error.message}`);
     } finally {
-        buttons[0].disabled = false;
-        buttons[0].textContent = "↻ Scan Gmail";
-        buttons[1].disabled = false;
-        buttons[1].textContent = "Scan new emails";
+        scanButtons.forEach(btn => {
+            btn.disabled = false;
+            if (btn.dataset.originalText) {
+                btn.textContent = btn.dataset.originalText;
+            }
+        });
     }
 }
 
-document.getElementById("scanBtn").addEventListener("click", scanGmail);
-document.getElementById("scanBtn2").addEventListener("click", scanGmail);
+const scanBtn1 = document.getElementById("scanBtn");
+const scanBtn2 = document.getElementById("scanBtn2");
+const bannerScanBtn = document.getElementById("bannerScanBtn");
+
+if (scanBtn1) scanBtn1.addEventListener("click", scanGmail);
+if (scanBtn2) scanBtn2.addEventListener("click", scanGmail);
+if (bannerScanBtn) bannerScanBtn.addEventListener("click", scanGmail);
 
 
 // -------------------------
@@ -339,14 +395,15 @@ function escapeHtml(value) {
 
 function showToast(message) {
     const toast = document.getElementById("toast");
+    if (!toast) return;
     toast.textContent = message;
     toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), 4500);
+    setTimeout(() => toast.classList.remove("show"), 4200);
 }
 
 
 // -------------------------
-// Init
+// Initialize
 // -------------------------
 
 checkHealth();

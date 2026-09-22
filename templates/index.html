@@ -3,107 +3,231 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Student AI</title>
+<title>Student AI · Knowledge Mining Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..800;1,9..40,400..700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-<div class="app-shell">
-<aside class="sidebar">
-    <div class="brand">
-        <div class="brand-mark">✦</div>
-        <div><div class="brand-title">Student AI</div><div class="brand-subtitle">Your academic assistant</div></div>
-    </div>
+<body class="clico-page">
 
-    <div class="connection"><span class="status-dot"></span><span id="connectionText">Gmail connected</span></div>
-
-    <nav>
-        <button class="nav-item active" data-view="chat">⌁ <span>AI Chat</span></button>
-        <button class="nav-item" data-view="tasks">✓ <span>Tasks</span></button>
-        <button class="nav-item" data-view="schedule">▣ <span>Schedule</span></button>
-        <button class="nav-item" data-view="emails">✉ <span>Emails</span></button>
-    </nav>
-
-    <div class="sidebar-bottom">
-        <button class="scan-button" id="scanBtn">↻ Scan Gmail</button>
-        <div class="mini-note">Foundry AI · Gmail · Notion</div>
+<!-- Clico-style top announcement banner -->
+<aside class="announcement-banner">
+    <div class="announcement-content">
+        <span class="announcement-tag">✦ Studio 2.5</span>
+        <span class="announcement-text">Connected to <strong>Chitkara Gmail</strong> &amp; <strong>Notion</strong> · Knowledge Mining Active</span>
+        <button class="announcement-action" id="bannerScanBtn">Scan inbox now →</button>
     </div>
 </aside>
 
-<main class="main">
-<header class="topbar">
-    <div>
-        <div class="eyebrow">STUDENT DASHBOARD</div>
-        <h1 id="pageTitle">Good evening 👋</h1>
-    </div>
-    <div class="top-status"><span class="status-dot"></span> <span id="systemStatus">Checking...</span></div>
-</header>
+<!-- Clico-style global floating header -->
+<header class="global-header">
+    <div class="header-inner">
+        <div class="brand-cluster">
+            <div class="brand-glyph" aria-hidden="true">✦</div>
+            <div class="brand-titles">
+                <span class="brand-name">Student AI</span>
+                <span class="brand-badge">ACADEMIC STUDIO</span>
+            </div>
+        </div>
 
-<section class="stats">
-    <div class="stat-card"><div class="stat-icon">✉</div><div><strong id="emailsCount">—</strong><span>Today's emails</span></div></div>
-    <div class="stat-card"><div class="stat-icon">!</div><div><strong id="importantCount">—</strong><span>Important</span></div></div>
-    <div class="stat-card"><div class="stat-icon">✓</div><div><strong id="assignmentCount">—</strong><span>Assignments</span></div></div>
-    <div class="stat-card"><div class="stat-icon">↑</div><div><strong id="highCount">—</strong><span>High priority</span></div></div>
-</section>
+        <nav class="nav-cluster" aria-label="Views">
+            <button class="nav-pill active" data-view="chat">
+                <span class="pill-icon">⌁</span>
+                <span>AI Chat</span>
+            </button>
+            <button class="nav-pill" data-view="tasks">
+                <span class="pill-icon">✓</span>
+                <span>Tasks</span>
+            </button>
+            <button class="nav-pill" data-view="schedule">
+                <span class="pill-icon">▣</span>
+                <span>Schedule</span>
+            </button>
+            <button class="nav-pill" data-view="emails">
+                <span class="pill-icon">✉</span>
+                <span>Emails</span>
+            </button>
+        </nav>
 
-<section id="chatView" class="view active-view">
-<div class="chat-card">
-    <div class="card-header">
-        <div><span class="badge">AI ASSISTANT</span><h2>Ask anything about your college emails</h2></div>
-        <span class="live-pill"><span class="status-dot"></span> Connected</span>
-    </div>
-
-    <div id="chatMessages" class="chat-messages">
-        <div class="message assistant">
-            <div class="avatar">✦</div>
-            <div class="bubble">I can search your college Gmail and find assignments, exams, deadlines, timetables, announcements, and other academic information.</div>
+        <div class="header-actions">
+            <div class="status-indicator">
+                <span class="status-pulse"></span>
+                <span id="systemStatus">All systems ready</span>
+            </div>
+            <button class="clico-btn clico-btn--primary" id="scanBtn">
+                <span class="btn-icon">↻</span>
+                <span>Sync Gmail</span>
+            </button>
         </div>
     </div>
+</header>
 
-    <div class="suggestions">
-        <button data-question="What are the important mails today?">Important mails today</button>
-        <button data-question="What assignments do I have?">My assignments</button>
-        <button data-question="What deadlines do I have this week?">Deadlines this week</button>
-        <button data-question="What exams were announced?">Exams announced</button>
-    </div>
+<!-- Main Application Workspace -->
+<main class="workspace" id="mainWorkspace">
 
-    <form id="chatForm" class="chat-form">
-        <input id="questionInput" autocomplete="off" placeholder="Ask about your college emails...">
-        <button type="submit">Ask AI <span>→</span></button>
-    </form>
-    <div id="chatStatus" class="chat-status"></div>
-</div>
-</section>
+    <!-- Clico-style Metric Stat Ribbon -->
+    <section class="stat-ribbon">
+        <div class="ribbon-card">
+            <div class="ribbon-icon">✉</div>
+            <div class="ribbon-data">
+                <strong id="emailsCount">—</strong>
+                <span>Today's Emails</span>
+            </div>
+        </div>
+        <div class="ribbon-card">
+            <div class="ribbon-icon ribbon-icon--warn">!</div>
+            <div class="ribbon-data">
+                <strong id="importantCount">—</strong>
+                <span>Important</span>
+            </div>
+        </div>
+        <div class="ribbon-card">
+            <div class="ribbon-icon ribbon-icon--accent">✓</div>
+            <div class="ribbon-data">
+                <strong id="assignmentCount">—</strong>
+                <span>Assignments</span>
+            </div>
+        </div>
+        <div class="ribbon-card">
+            <div class="ribbon-icon ribbon-icon--high">↑</div>
+            <div class="ribbon-data">
+                <strong id="highCount">—</strong>
+                <span>High Priority</span>
+            </div>
+        </div>
+    </section>
 
-<section id="tasksView" class="view">
-<div class="section-card">
-    <div class="section-heading">
-        <div><span class="badge">NOTION</span><h2>Your academic tasks</h2></div>
-        <button class="secondary-btn" id="scanBtn2">Scan new emails</button>
-    </div>
-    <div id="taskList" class="task-list"><div class="loading">Loading Notion tasks...</div></div>
-</div>
-</section>
+    <!-- VIEW 1: AI Chat & Research Studio (Default) -->
+    <section id="chatView" class="view active-view">
+        <!-- Clico Hero Copy -->
+        <div class="hero-cluster">
+            <div class="hero-tag">AI STUDIO FOR STUDENTS</div>
+            <h1 class="hero-headline">
+                <span>Explore college emails with </span>
+                <span class="chroma-text">Deep Research</span>
+                <span> &amp; </span>
+                <span class="chroma-text">Task Mining</span>
+            </h1>
+            <p class="hero-subtitle">
+                Ask questions about your college announcements, track assignments, and automatically extract tasks to your Notion database in one continuous workspace.
+            </p>
+        </div>
 
-<section id="scheduleView" class="view">
-<div class="section-card">
-    <div class="section-heading"><div><span class="badge">ACADEMIC</span><h2>Your academic schedule</h2></div></div>
-    <div id="scheduleList" class="schedule-list"><div class="loading">Loading schedule...</div></div>
-</div>
-</section>
+        <!-- Clico Signature Studio Composer -->
+        <div class="composer-card">
+            <form id="chatForm" class="composer-form">
+                <div class="composer-input-wrap">
+                    <textarea 
+                        id="questionInput" 
+                        rows="2" 
+                        placeholder="What do you want to find out or extract from your college emails?" 
+                        autocomplete="off"
+                        required></textarea>
+                </div>
 
-<section id="emailsView" class="view">
-<div class="section-card">
-    <div class="section-heading">
-        <div><span class="badge">GMAIL</span><h2>Your recent emails</h2></div>
-        <button class="secondary-btn" id="refreshEmails">Refresh</button>
-    </div>
-    <div id="emailList" class="email-list"><div class="loading">Loading recent emails...</div></div>
-</div>
-</section>
+                <div class="composer-toolbar">
+                    <div class="composer-chips">
+                        <span class="chips-label">Try asking:</span>
+                        <button type="button" class="chip-btn" data-question="What are the important mails today?">Important mails today</button>
+                        <button type="button" class="chip-btn" data-question="What assignments do I have?">My assignments</button>
+                        <button type="button" class="chip-btn" data-question="What deadlines do I have this week?">Deadlines this week</button>
+                        <button type="button" class="chip-btn" data-question="What exams or timetables were announced?">Exams &amp; Timetables</button>
+                    </div>
+
+                    <div class="composer-actions">
+                        <div class="model-badge">
+                            <span class="model-dot"></span>
+                            <span>Foundry AI</span>
+                        </div>
+                        <button type="submit" class="composer-submit" id="askBtn">
+                            <span>Ask AI</span>
+                            <span class="arrow-glyph">→</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+            <div id="chatStatus" class="composer-status"></div>
+        </div>
+
+        <!-- Conversation Stream -->
+        <div class="stream-container">
+            <div class="stream-header">
+                <span class="stream-title">Studio Conversation</span>
+                <button type="button" class="clear-chat-btn" id="clearChatBtn">Clear chat</button>
+            </div>
+
+            <div id="chatMessages" class="chat-messages">
+                <div class="message assistant">
+                    <div class="message-avatar">✦</div>
+                    <div class="message-content">
+                        <div class="message-sender">Student AI Studio</div>
+                        <div class="bubble">
+                            I am connected to your college Gmail and Notion. Ask me anything about assignments, exams, dates, course circulars, or timetables — or click <strong>Sync Gmail</strong> to mine your inbox and create actionable Notion tasks automatically.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VIEW 2: Notion Tasks -->
+    <section id="tasksView" class="view">
+        <div class="panel-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-tag">NOTION DATABASE</div>
+                    <h2 class="panel-title">Your Academic Tasks</h2>
+                </div>
+                <button class="clico-btn clico-btn--secondary" id="scanBtn2">
+                    <span class="btn-icon">↻</span>
+                    <span>Scan New Emails</span>
+                </button>
+            </div>
+            <div id="taskList" class="task-list">
+                <div class="panel-loading">Loading tasks from Notion...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VIEW 3: Academic Schedule -->
+    <section id="scheduleView" class="view">
+        <div class="panel-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-tag">TIMELINE</div>
+                    <h2 class="panel-title">Academic Schedule &amp; Deadlines</h2>
+                </div>
+            </div>
+            <div id="scheduleList" class="schedule-list">
+                <div class="panel-loading">Loading schedule...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VIEW 4: Recent Emails -->
+    <section id="emailsView" class="view">
+        <div class="panel-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-tag">GMAIL INBOX</div>
+                    <h2 class="panel-title">Recent Academic Emails</h2>
+                </div>
+                <button class="clico-btn clico-btn--secondary" id="refreshEmails">
+                    <span class="btn-icon">↻</span>
+                    <span>Refresh</span>
+                </button>
+            </div>
+            <div id="emailList" class="email-list">
+                <div class="panel-loading">Loading emails...</div>
+            </div>
+        </div>
+    </section>
 
 </main>
-</div>
-<div id="toast" class="toast"></div>
+
+<div id="toast" class="clico-toast" role="alert" aria-live="polite"></div>
+
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
