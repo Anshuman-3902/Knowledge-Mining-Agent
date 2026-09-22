@@ -335,7 +335,28 @@ app = Flask(
     template_folder=str(BASE_DIR / "templates"),
     static_folder=str(BASE_DIR / "static"),
 )
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max upload limit
 CORS(app)
+
+
+@app.errorhandler(413)
+def error_413(err):
+    return jsonify({"ok": False, "success": False, "error": "File exceeds the 50MB upload limit."}), 413
+
+
+@app.errorhandler(500)
+def error_500(err):
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "success": False, "error": f"Internal server error: {err}"}), 500
+    return err
+
+
+@app.errorhandler(400)
+def error_400(err):
+    if request.path.startswith("/api/"):
+        msg = getattr(err, "description", "Bad request.")
+        return jsonify({"ok": False, "success": False, "error": str(msg)}), 400
+    return err
 
 
 # -------------------------
@@ -1380,17 +1401,46 @@ def format_file_size(bytes_num):
 def extract_text_from_file(file_path):
     suffix = Path(file_path).suffix.lower()
     if suffix == ".pdf":
-        reader = pypdf.PdfReader(str(file_path))
-        pages = []
-        for idx, page in enumerate(reader.pages, 1):
-            t = page.extract_text() or ""
-            if t.strip():
-                pages.append(f"--- [Page {idx}] ---\n{t.strip()}")
-        return "\n\n".join(pages), len(reader.pages)
-    elif suffix in {".docx", ".doc"}:
-        doc = docx.Document(str(file_path))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        return "\n\n".join(paragraphs), 1
+        try:
+            reader = pypdf.PdfReader(str(file_path), strict=False)
+            pages = []
+            total_pages = len(reader.pages)
+            for idx, page in enumerate(reader.pages, 1):
+                try:
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        pages.append(f"--- [Page {idx}] ---\n{t.strip()}")
+                except Exception as page_err:
+                    print(f"Warning: page {idx} extract failed: {page_err}")
+            return "\n\n".join(pages), total_pages
+        except Exception as pdf_err:
+            raise ValueError(f"Could not read PDF: {pdf_err}")
+    elif suffix == ".docx":
+        try:
+            doc = docx.Document(str(file_path))
+            elements = []
+            for p in doc.paragraphs:
+                if p.text.strip():
+                    elements.append(p.text.strip())
+            for t in doc.tables:
+                for row in t.rows:
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                    if row_text:
+                        elements.append(row_text)
+            return "\n\n".join(elements), 1
+        except Exception as docx_err:
+            raise ValueError(f"Could not read Word document: {docx_err}")
+    elif suffix == ".doc":
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read().decode("latin1", errors="ignore")
+            runs = re.findall(r"[\x20-\x7E\s]{4,}", content)
+            joined = "\n".join(r.strip() for r in runs if len(r.strip()) > 10)
+            if len(joined) > 50:
+                return joined, 1
+        except Exception:
+            pass
+        raise ValueError("Legacy .DOC binary format is not fully supported. Please save or convert the file to .DOCX or .PDF.")
     else:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
@@ -1470,83 +1520,88 @@ Student Question:
 
 @app.post("/api/documents/upload")
 def api_documents_upload():
-    if "file" not in request.files:
-        return jsonify({"ok": False, "error": "No file uploaded."}), 400
-
-    file = request.files["file"]
-    if not file or not file.filename:
-        return jsonify({"ok": False, "error": "Empty filename."}), 400
-
-    filename = secure_filename(file.filename)
-    if not filename:
-        filename = f"upload_{uuid.uuid4().hex[:8]}.txt"
-
-    ext = Path(filename).suffix.lower()
-    allowed_exts = {".pdf", ".docx", ".doc", ".txt", ".md"}
-    if ext not in allowed_exts:
-        return jsonify({
-            "ok": False,
-            "error": f"Unsupported format '{ext}'. Allowed formats: PDF, DOCX, TXT, MD."
-        }), 400
-
-    uploads_dir = get_uploads_dir()
-    doc_id = f"doc_{uuid.uuid4().hex[:10]}"
-    stored_name = f"{doc_id}_{filename}"
-    saved_path = uploads_dir / stored_name
-    file.save(str(saved_path))
-
-    size_bytes = saved_path.stat().st_size
-    size_str = format_file_size(size_bytes)
-
     try:
-        extracted_text, page_count = extract_text_from_file(saved_path)
-    except Exception as exc:
-        if saved_path.exists():
-            saved_path.unlink()
-        return jsonify({"ok": False, "error": f"Failed to extract document text: {exc}"}), 500
+        if "file" not in request.files:
+            return jsonify({"ok": False, "success": False, "error": "No file attached to upload."}), 400
 
-    if not extracted_text.strip():
-        if saved_path.exists():
-            saved_path.unlink()
-        return jsonify({"ok": False, "error": "Document appears to be empty or scanned images without readable text."}), 400
+        file = request.files["file"]
+        if not file or not file.filename:
+            return jsonify({"ok": False, "success": False, "error": "No file selected."}), 400
 
-    # Save extracted text cache
-    text_cache_file = uploads_dir / f"{doc_id}.txt"
-    text_cache_file.write_text(extracted_text, encoding="utf-8")
+        raw_filename = file.filename
+        ext = Path(raw_filename).suffix.lower()
+        allowed_exts = {".pdf", ".docx", ".doc", ".txt", ".md"}
+        if ext not in allowed_exts:
+            return jsonify({
+                "ok": False,
+                "success": False,
+                "error": f"Unsupported format '{ext or 'unknown'}'. Supported formats: PDF, DOCX, TXT, MD."
+            }), 400
 
-    # Generate AI summary
-    try:
-        summary = summarize_document_with_foundry(extracted_text, filename)
-    except Exception as exc:
-        summary = {
-            "title": filename,
-            "overview": f"Summary generation could not be completed: {exc}",
-            "key_points": [],
-            "deadlines": [],
-            "action_items": []
+        uploads_dir = get_uploads_dir()
+        doc_id = f"doc_{uuid.uuid4().hex[:10]}"
+        stem = Path(raw_filename).stem
+        stem_safe = secure_filename(stem) or f"doc_{uuid.uuid4().hex[:6]}"
+        stored_name = f"{doc_id}_{stem_safe}{ext}"
+        saved_path = uploads_dir / stored_name
+        file.save(str(saved_path))
+
+        size_bytes = saved_path.stat().st_size
+        size_str = format_file_size(size_bytes)
+
+        try:
+            extracted_text, page_count = extract_text_from_file(saved_path)
+        except Exception as exc:
+            if saved_path.exists():
+                saved_path.unlink()
+            return jsonify({"ok": False, "success": False, "error": f"Could not read document contents: {exc}"}), 400
+
+        if not extracted_text or not extracted_text.strip():
+            extracted_text = (
+                f"Notice: No readable text could be extracted from '{raw_filename}'. "
+                f"This document may consist of scanned photographic images or non-selectable graphics."
+            )
+
+        # Save extracted text cache
+        text_cache_file = uploads_dir / f"{doc_id}.txt"
+        text_cache_file.write_text(extracted_text, encoding="utf-8")
+
+        # Generate AI summary
+        try:
+            summary = summarize_document_with_foundry(extracted_text, raw_filename)
+        except Exception as exc:
+            summary = {
+                "title": raw_filename,
+                "overview": f"Summary generation could not be completed: {exc}",
+                "key_points": [],
+                "deadlines": [],
+                "action_items": []
+            }
+
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        doc_entry = {
+            "id": doc_id,
+            "filename": raw_filename,
+            "stored_filename": stored_name,
+            "file_type": ext.lstrip("."),
+            "size_bytes": size_bytes,
+            "size_formatted": size_str,
+            "page_count": page_count,
+            "char_count": len(extracted_text),
+            "uploaded_at": now_str,
+            "summary": summary
         }
 
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    doc_entry = {
-        "id": doc_id,
-        "filename": filename,
-        "stored_filename": stored_name,
-        "file_type": ext.lstrip("."),
-        "size_bytes": size_bytes,
-        "size_formatted": size_str,
-        "page_count": page_count,
-        "char_count": len(extracted_text),
-        "uploaded_at": now_str,
-        "summary": summary
-    }
+        registry = load_documents_registry()
+        docs = registry.get("documents", [])
+        docs.insert(0, doc_entry)
+        registry["documents"] = docs
+        save_documents_registry(registry)
 
-    registry = load_documents_registry()
-    docs = registry.get("documents", [])
-    docs.insert(0, doc_entry)
-    registry["documents"] = docs
-    save_documents_registry(registry)
-
-    return jsonify({"ok": True, "success": True, "document": doc_entry})
+        return jsonify({"ok": True, "success": True, "document": doc_entry})
+    except Exception as exc:
+        print(f"Top-level upload error: {exc}")
+        return jsonify({"ok": False, "success": False, "error": f"Upload processing error: {str(exc)}"}), 500
 
 
 @app.get("/api/documents")

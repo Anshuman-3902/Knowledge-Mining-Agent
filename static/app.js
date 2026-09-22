@@ -477,6 +477,24 @@ if (dropZone && docFileInput) {
     });
 }
 
+async function safeFetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (_) {
+        const cleanMsg = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        throw new Error(cleanMsg.slice(0, 140) || `Server error (${response.status})`);
+    }
+
+    if (!response.ok || (!data.ok && !data.success)) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+    }
+
+    return data;
+}
+
 async function handleDocumentUpload(file) {
     const validExtensions = [".pdf", ".docx", ".doc", ".txt", ".md"];
     const ext = "." + file.name.split(".").pop().toLowerCase();
@@ -499,16 +517,10 @@ async function handleDocumentUpload(file) {
     formData.append("file", file);
 
     try {
-        const response = await fetch("/api/documents/upload", {
+        const data = await safeFetchJson("/api/documents/upload", {
             method: "POST",
             body: formData
         });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || "Failed to upload and analyze document");
-        }
 
         if (uploadStatus) {
             uploadStatus.className = "upload-status success";
@@ -532,14 +544,7 @@ async function loadDocuments(selectDocId = null) {
     if (!documentList) return;
 
     try {
-        const response = await fetch("/api/documents");
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            documentList.innerHTML = `<div class="empty-state"><p>Could not load documents: ${data.error || "Unknown error"}</p></div>`;
-            return;
-        }
-
+        const data = await safeFetchJson("/api/documents");
         documentsRegistry = data.documents || [];
 
         if (docCountBadge) {
@@ -566,7 +571,7 @@ async function loadDocuments(selectDocId = null) {
                         <div class="doc-item-meta">
                             <span>${escapeHtml(doc.file_type.toUpperCase())}</span>
                             <span>•</span>
-                            <span>${escapeHtml(doc.file_size)}</span>
+                            <span>${escapeHtml(doc.file_size || doc.size_formatted || "")}</span>
                         </div>
                     </div>
                 </div>
@@ -595,18 +600,15 @@ async function loadDocuments(selectDocId = null) {
         }
     } catch (err) {
         console.error("Load documents error:", err);
-        documentList.innerHTML = `<div class="empty-state"><p>Error fetching documents.</p></div>`;
+        documentList.innerHTML = `<div class="empty-state"><p>Error loading documents: ${escapeHtml(err.message)}</p></div>`;
     }
 }
 
 async function selectDocument(docId) {
     try {
-        const response = await fetch(`/api/documents/${docId}`);
-        const data = await response.json();
-
-        if (!response.ok || !data.success || !data.document) {
-            showToast("Failed to load document details");
-            return;
+        const data = await safeFetchJson(`/api/documents/${docId}`);
+        if (!data.document) {
+            throw new Error("Document details missing.");
         }
 
         currentActiveDoc = data.document;
@@ -626,7 +628,9 @@ async function selectDocument(docId) {
         if (activeDocTitle) activeDocTitle.textContent = currentActiveDoc.filename;
         if (activeDocMeta) {
             const dateStr = formatDate(currentActiveDoc.uploaded_at);
-            activeDocMeta.textContent = `${currentActiveDoc.file_type.toUpperCase()} · ${currentActiveDoc.file_size} · Uploaded ${dateStr}`;
+            const sizeStr = currentActiveDoc.size_formatted || currentActiveDoc.file_size || "";
+            const pagesStr = currentActiveDoc.page_count ? ` · ${currentActiveDoc.page_count} page${currentActiveDoc.page_count === 1 ? "" : "s"}` : "";
+            activeDocMeta.textContent = `${currentActiveDoc.file_type.toUpperCase()} · ${sizeStr}${pagesStr} · Uploaded ${dateStr}`;
         }
 
         // Fill summary
@@ -676,7 +680,7 @@ async function selectDocument(docId) {
         }
     } catch (err) {
         console.error("Select document error:", err);
-        showToast("Error loading document");
+        showToast(`Error loading document: ${err.message}`);
     }
 }
 
@@ -710,17 +714,11 @@ if (docChatForm) {
         if (docAskBtn) docAskBtn.disabled = true;
 
         try {
-            const response = await fetch(`/api/documents/${currentActiveDoc.id}/chat`, {
+            const data = await safeFetchJson(`/api/documents/${currentActiveDoc.id}/chat`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ question })
             });
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || "Failed to get answer");
-            }
 
             const botMsg = document.createElement("div");
             botMsg.className = "message assistant";
@@ -761,14 +759,9 @@ if (deleteActiveDocBtn) {
         if (!ok) return;
 
         try {
-            const response = await fetch(`/api/documents/${currentActiveDoc.id}`, {
+            await safeFetchJson(`/api/documents/${currentActiveDoc.id}`, {
                 method: "DELETE"
             });
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || "Failed to delete document");
-            }
 
             showToast(`Document "${currentActiveDoc.filename}" deleted.`);
             currentActiveDoc = null;
