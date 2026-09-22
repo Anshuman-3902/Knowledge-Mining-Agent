@@ -18,11 +18,9 @@ function showView(name) {
     Object.entries(views).forEach(([key, element]) => {
         element.classList.toggle("active-view", key === name);
     });
-
     navItems.forEach(button => {
         button.classList.toggle("active", button.dataset.view === name);
     });
-
     document.getElementById("pageTitle").textContent = titles[name];
 
     if (name === "tasks") loadTasks();
@@ -34,6 +32,17 @@ navItems.forEach(button => {
     button.addEventListener("click", () => showView(button.dataset.view));
 });
 
+
+// -------------------------
+// Single Account Mode
+// -------------------------
+
+let activeAccount = "";
+
+
+// -------------------------
+// Chat
+// -------------------------
 
 function addMessage(text, role = "assistant") {
     const container = document.getElementById("chatMessages");
@@ -54,50 +63,48 @@ function addMessage(text, role = "assistant") {
     container.scrollTop = container.scrollHeight;
 }
 
-
 async function askAI(question) {
     addMessage(question, "user");
 
     const status = document.getElementById("chatStatus");
-    status.textContent = "Searching Gmail and asking Foundry AI...";
+    const accLabel = activeAccount === "all" ? "all accounts" : (activeAccount || "Gmail");
+    status.textContent = `Searching ${accLabel} and asking Foundry AI…`;
 
     try {
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({question})
+            body: JSON.stringify({question, account: activeAccount || undefined})
         });
 
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error || "Request failed.");
 
         addMessage(data.answer, "assistant");
-        status.textContent = `${data.emails_found} email(s) checked.`;
+        status.textContent = `${data.emails_found} email(s) checked · ${data.account || ""}`;
     } catch (error) {
         addMessage(`I couldn't complete that request: ${error.message}`, "assistant");
         status.textContent = "Request failed.";
     }
 }
 
-
 document.getElementById("chatForm").addEventListener("submit", async event => {
     event.preventDefault();
-
     const input = document.getElementById("questionInput");
     const question = input.value.trim();
-
     if (!question) return;
-
     input.value = "";
     await askAI(question);
 });
-
 
 document.querySelectorAll(".suggestions button").forEach(button => {
     button.addEventListener("click", () => askAI(button.dataset.question));
 });
 
+
+// -------------------------
+// Tasks
+// -------------------------
 
 async function loadTasks() {
     const list = document.getElementById("taskList");
@@ -106,7 +113,6 @@ async function loadTasks() {
     try {
         const response = await fetch("/api/tasks");
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error);
 
         if (!data.tasks.length) {
@@ -114,7 +120,7 @@ async function loadTasks() {
                 <div class="empty-state">
                     <div class="empty-icon">✓</div>
                     <h3>No tasks found</h3>
-                    <p>Click “Scan new emails” to find actionable academic work and add it to Notion.</p>
+                    <p>Click "Scan new emails" to find actionable academic work and add it to Notion.</p>
                 </div>`;
             return;
         }
@@ -140,6 +146,10 @@ async function loadTasks() {
 }
 
 
+// -------------------------
+// Schedule
+// -------------------------
+
 async function loadSchedule() {
     const list = document.getElementById("scheduleList");
     list.innerHTML = '<div class="loading">Loading schedule...</div>';
@@ -147,7 +157,6 @@ async function loadSchedule() {
     try {
         const response = await fetch("/api/schedule");
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error);
 
         if (!data.events.length) {
@@ -175,14 +184,18 @@ async function loadSchedule() {
 }
 
 
+// -------------------------
+// Emails
+// -------------------------
+
 async function loadEmails() {
     const list = document.getElementById("emailList");
     list.innerHTML = '<div class="loading">Loading recent emails...</div>';
 
     try {
-        const response = await fetch("/api/emails");
+        const accParam = activeAccount ? `?account=${encodeURIComponent(activeAccount)}` : "";
+        const response = await fetch(`/api/emails${accParam}`);
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error);
 
         if (!data.emails.length) {
@@ -190,10 +203,12 @@ async function loadEmails() {
             return;
         }
 
+        const showAccount = activeAccount === "all";
         list.innerHTML = data.emails.map(email => `
             <div class="email-row">
                 <div class="email-subject">${escapeHtml(email.subject || "(No subject)")}</div>
                 <div class="email-meta">${escapeHtml(email.sender || "")} · ${escapeHtml(email.date || "")}</div>
+                ${showAccount && email.account ? `<span class="email-account-tag">${escapeHtml(email.account)}</span>` : ""}
             </div>
         `).join("");
     } catch (error) {
@@ -204,11 +219,15 @@ async function loadEmails() {
 document.getElementById("refreshEmails").addEventListener("click", loadEmails);
 
 
+// -------------------------
+// Stats
+// -------------------------
+
 async function loadStats() {
     try {
-        const response = await fetch("/api/stats");
+        const accParam = activeAccount ? `?account=${encodeURIComponent(activeAccount)}` : "";
+        const response = await fetch(`/api/stats${accParam}`);
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error);
 
         document.getElementById("emailsCount").textContent = data.today_emails;
@@ -225,24 +244,29 @@ async function loadStats() {
 }
 
 
+// -------------------------
+// Health check
+// -------------------------
+
 async function checkHealth() {
     try {
         const response = await fetch("/api/health");
         const data = await response.json();
 
         if (data.ok && data.gmail && data.notion && data.foundry) {
-            document.getElementById("connectionText").textContent = "Gmail connected";
             document.getElementById("systemStatus").textContent = "All systems ready";
         } else {
-            document.getElementById("connectionText").textContent = "Check configuration";
             document.getElementById("systemStatus").textContent = "Configuration needed";
         }
     } catch (_) {
-        document.getElementById("connectionText").textContent = "Backend offline";
         document.getElementById("systemStatus").textContent = "Backend offline";
     }
 }
 
+
+// -------------------------
+// Gmail Scan
+// -------------------------
 
 async function scanGmail() {
     const buttons = [
@@ -258,9 +282,13 @@ async function scanGmail() {
     showToast("Scanning Gmail and creating Notion tasks...");
 
     try {
-        const response = await fetch("/api/scan", {method: "POST"});
+        const body = activeAccount ? {account: activeAccount} : {};
+        const response = await fetch("/api/scan", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body)
+        });
         const data = await response.json();
-
         if (!data.ok) throw new Error(data.error);
 
         if (data.failures && data.failures.length) {
@@ -285,6 +313,10 @@ document.getElementById("scanBtn").addEventListener("click", scanGmail);
 document.getElementById("scanBtn2").addEventListener("click", scanGmail);
 
 
+// -------------------------
+// Utilities
+// -------------------------
+
 function formatDate(value) {
     if (!value) return "";
     const date = new Date(value + (value.length === 10 ? "T00:00:00" : ""));
@@ -296,7 +328,6 @@ function formatDate(value) {
     });
 }
 
-
 function escapeHtml(value) {
     return String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -306,7 +337,6 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
-
 function showToast(message) {
     const toast = document.getElementById("toast");
     toast.textContent = message;
@@ -314,6 +344,10 @@ function showToast(message) {
     setTimeout(() => toast.classList.remove("show"), 4500);
 }
 
+
+// -------------------------
+// Init
+// -------------------------
 
 checkHealth();
 loadStats();

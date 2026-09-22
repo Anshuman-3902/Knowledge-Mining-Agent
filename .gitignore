@@ -34,6 +34,8 @@ venv.bak/
 !.env.example
 credentials.json
 token.json
+tokens/
+accounts.json
 client_secret*.json
 
 # Testing & Coverage
