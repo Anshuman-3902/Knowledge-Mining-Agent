@@ -1547,23 +1547,23 @@ button {
 
 .azure-watermark {
     position: fixed;
-    bottom: 22px;
-    left: 24px;
+    bottom: 24px;
+    left: 28px;
     z-index: 990;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 13px 6px 10px;
+    gap: 11px;
+    padding: 8px 18px 8px 14px;
     border-radius: var(--radius-full);
-    background: rgba(255, 255, 255, 0.76);
+    background: rgba(255, 255, 255, 0.82);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
-    border: 1px solid var(--border-subtle);
-    box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
-    font-size: 11.5px;
+    border: 1px solid var(--border-medium);
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+    font-size: 13.5px;
     font-weight: 600;
-    letter-spacing: 0.015em;
-    color: var(--text-secondary);
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
     user-select: none;
     pointer-events: auto;
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1571,17 +1571,17 @@ button {
 
 .azure-watermark:hover {
     color: var(--text-primary);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 22px rgba(0, 120, 212, 0.14);
-    border-color: rgba(0, 120, 212, 0.35);
-    background: rgba(255, 255, 255, 0.92);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(0, 120, 212, 0.18);
+    border-color: rgba(0, 120, 212, 0.45);
+    background: rgba(255, 255, 255, 0.96);
 }
 
 .azure-logo-icon {
     flex-shrink: 0;
     display: block;
-    width: 15px;
-    height: 15px;
+    width: 20px;
+    height: 20px;
 }
 
 .azure-watermark .watermark-text {
@@ -1589,17 +1589,17 @@ button {
 }
 
 [data-theme="dark"] .azure-watermark {
-    background: rgba(18, 22, 33, 0.78);
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-    color: #94a3b8;
+    background: rgba(18, 22, 33, 0.86);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 6px 26px rgba(0, 0, 0, 0.45);
+    color: #e2e8f0;
 }
 
 [data-theme="dark"] .azure-watermark:hover {
     color: #ffffff;
-    background: rgba(22, 27, 40, 0.94);
-    border-color: rgba(80, 230, 255, 0.35);
-    box-shadow: 0 6px 24px rgba(0, 120, 212, 0.25);
+    background: rgba(22, 27, 40, 0.96);
+    border-color: rgba(80, 230, 255, 0.45);
+    box-shadow: 0 8px 30px rgba(0, 120, 212, 0.3);
 }
 
 /* ==========================================================================
@@ -1662,10 +1662,14 @@ button {
         padding: 24px 14px;
     }
     .azure-watermark {
-        bottom: 12px;
-        left: 12px;
-        padding: 5px 10px 5px 8px;
-        font-size: 10px;
-        gap: 6px;
+        bottom: 14px;
+        left: 14px;
+        padding: 7px 13px 7px 10px;
+        font-size: 11.5px;
+        gap: 8px;
+    }
+    .azure-watermark .azure-logo-icon {
+        width: 17px;
+        height: 17px;
     }
 }
