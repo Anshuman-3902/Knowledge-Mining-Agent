@@ -52,8 +52,29 @@ def get_credentials_file():
             pass
     return local_file
 
+_IS_READONLY_FS = None
+
+def is_serverless_or_readonly():
+    global _IS_READONLY_FS
+    if _IS_READONLY_FS is not None:
+        return _IS_READONLY_FS
+
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
+        _IS_READONLY_FS = True
+        return True
+
+    try:
+        test_file = BASE_DIR / f".write_test_{uuid.uuid4().hex}"
+        test_file.touch()
+        test_file.unlink()
+        _IS_READONLY_FS = False
+        return False
+    except (OSError, PermissionError):
+        _IS_READONLY_FS = True
+        return True
+
 def get_tokens_dir():
-    if os.getenv("VERCEL") or not os.access(BASE_DIR, os.W_OK):
+    if is_serverless_or_readonly():
         tokens_dir = Path("/tmp") / "tokens"
     else:
         tokens_dir = BASE_DIR / "tokens"
@@ -61,7 +82,7 @@ def get_tokens_dir():
     return tokens_dir
 
 def get_accounts_file():
-    if os.getenv("VERCEL") or not os.access(BASE_DIR, os.W_OK):
+    if is_serverless_or_readonly():
         return Path("/tmp") / "accounts.json"
     return BASE_DIR / "accounts.json"
 
@@ -1366,7 +1387,10 @@ def api_scan():
 # -------------------------
 
 def get_uploads_dir():
-    uploads_dir = BASE_DIR / "uploads"
+    if is_serverless_or_readonly():
+        uploads_dir = Path("/tmp") / "uploads"
+    else:
+        uploads_dir = BASE_DIR / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
     return uploads_dir
 
@@ -1378,6 +1402,12 @@ def get_documents_file():
 def load_documents_registry():
     doc_file = get_documents_file()
     if not doc_file.exists():
+        local_doc_file = BASE_DIR / "uploads" / "documents.json"
+        if local_doc_file.exists():
+            try:
+                return json.loads(local_doc_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
         return {"documents": []}
     try:
         return json.loads(doc_file.read_text(encoding="utf-8"))
@@ -1387,7 +1417,10 @@ def load_documents_registry():
 
 def save_documents_registry(data):
     doc_file = get_documents_file()
-    doc_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        doc_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        print(f"Error saving documents registry: {e}")
 
 
 def format_file_size(bytes_num):
@@ -1553,7 +1586,10 @@ def api_documents_upload():
             extracted_text, page_count = extract_text_from_file(saved_path)
         except Exception as exc:
             if saved_path.exists():
-                saved_path.unlink()
+                try:
+                    saved_path.unlink()
+                except OSError:
+                    pass
             return jsonify({"ok": False, "success": False, "error": f"Could not read document contents: {exc}"}), 400
 
         if not extracted_text or not extracted_text.strip():
@@ -1622,7 +1658,12 @@ def api_documents_get(doc_id):
     if not doc:
         return jsonify({"ok": False, "success": False, "error": "Document not found."}), 404
 
-    text_cache = get_uploads_dir() / f"{doc_id}.txt"
+    uploads_dir = get_uploads_dir()
+    text_cache = uploads_dir / f"{doc_id}.txt"
+    if not text_cache.exists():
+        fallback_cache = BASE_DIR / "uploads" / f"{doc_id}.txt"
+        if fallback_cache.exists():
+            text_cache = fallback_cache
     text_content = text_cache.read_text(encoding="utf-8") if text_cache.exists() else ""
 
     return jsonify({
@@ -1650,6 +1691,10 @@ def api_documents_chat(doc_id):
         combined_texts = []
         for d in docs[:5]:
             t_file = uploads_dir / f"{d['id']}.txt"
+            if not t_file.exists():
+                fallback = BASE_DIR / "uploads" / f"{d['id']}.txt"
+                if fallback.exists():
+                    t_file = fallback
             if t_file.exists():
                 combined_texts.append(f"=== DOCUMENT: {d['filename']} ===\n{t_file.read_text(encoding='utf-8')[:10000]}")
         text = "\n\n".join(combined_texts)
@@ -1659,6 +1704,10 @@ def api_documents_chat(doc_id):
         if not doc_meta:
             return jsonify({"ok": False, "success": False, "error": "Document not found."}), 404
         t_file = uploads_dir / f"{doc_id}.txt"
+        if not t_file.exists():
+            fallback = BASE_DIR / "uploads" / f"{doc_id}.txt"
+            if fallback.exists():
+                t_file = fallback
         if not t_file.exists():
             return jsonify({"ok": False, "success": False, "error": "Document text cache missing."}), 404
         text = t_file.read_text(encoding="utf-8")
@@ -1686,11 +1735,17 @@ def api_documents_delete(doc_id):
     uploads_dir = get_uploads_dir()
     stored_path = uploads_dir / target.get("stored_filename", "")
     if stored_path.exists():
-        stored_path.unlink()
+        try:
+            stored_path.unlink()
+        except OSError:
+            pass
 
     txt_cache = uploads_dir / f"{doc_id}.txt"
     if txt_cache.exists():
-        txt_cache.unlink()
+        try:
+            txt_cache.unlink()
+        except OSError:
+            pass
 
     registry["documents"] = [d for d in docs if d["id"] != doc_id]
     save_documents_registry(registry)
